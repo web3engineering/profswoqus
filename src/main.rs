@@ -13,7 +13,7 @@ use solana_sdk::system_instruction;
 use clap::Parser;
 use anyhow::Result;
 use tracing::{info, warn, error};
-use bs58;
+use base64::{Engine as _, engine::general_purpose};
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
@@ -190,7 +190,7 @@ async fn process_transaction(
     tx_data: &str,
     connections: &ConnectionPool,
 ) -> Result<Option<String>> {
-    let tx_bytes = bs58::decode(tx_data).into_vec()?;
+    let tx_bytes = general_purpose::STANDARD.decode(tx_data)?;
     let transaction: Transaction = bincode::deserialize(&tx_bytes)?;
     
     let target_pubkey = TARGET_PUBKEY.parse::<Pubkey>()?;
