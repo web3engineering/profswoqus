@@ -190,6 +190,7 @@ async fn process_transaction(
     tx_data: &str,
     connections: &ConnectionPool,
 ) -> Result<Option<String>> {
+    tracing::info!("Decoding base64 transaction data, length: {}", tx_data.len());
     let tx_bytes = general_purpose::STANDARD.decode(tx_data)?;
     let transaction: Transaction = bincode::deserialize(&tx_bytes)?;
     
