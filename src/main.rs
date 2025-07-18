@@ -8,7 +8,7 @@ use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solana_sdk::pubkey::Pubkey;
-use solana_sdk::transaction::Transaction;
+use solana_sdk::transaction::VersionedTransaction;
 use solana_sdk::system_instruction;
 use clap::Parser;
 use anyhow::Result;
@@ -196,35 +196,8 @@ async fn process_transaction(
                   tx_bytes.len(), 
                   &tx_bytes[..tx_bytes.len().min(20)]);
     
-    // Try deserializing transaction - Solana uses bincode format
-    let transaction: Transaction = match bincode::deserialize(&tx_bytes) {
-        Ok(tx) => {
-            tracing::info!("Successfully deserialized transaction with bincode");
-            tx
-        }
-        Err(e) => {
-            tracing::error!("Failed to deserialize transaction with bincode: {}", e);
-            tracing::info!("Trying alternative: raw bytes (hex): {}", hex::encode(&tx_bytes));
-            
-            // If bincode fails, the issue might be encoding format
-            // Let's try with different bincode config
-            use bincode::Options;
-            let config = bincode::DefaultOptions::new()
-                .with_fixint_encoding()
-                .allow_trailing_bytes();
-            
-            match config.deserialize(&tx_bytes) {
-                Ok(tx) => {
-                    tracing::info!("Successfully deserialized with alternative bincode config");
-                    tx
-                }
-                Err(e2) => {
-                    tracing::error!("Alternative bincode config also failed: {}", e2);
-                    return Err(e.into());
-                }
-            }
-        }
-    };
+    // Try deserializing transaction using Solana's method
+    let transaction: VersionedTransaction = bincode::deserialize(&tx_bytes)?;
     
     let target_pubkey = TARGET_PUBKEY.parse::<Pubkey>()?;
     
@@ -245,9 +218,9 @@ async fn process_transaction(
     }
 }
 
-fn has_target_transfer(transaction: &Transaction, target_pubkey: &Pubkey) -> bool {
-    for instruction in &transaction.message.instructions {
-        if let Some(program_id) = transaction.message.account_keys.get(instruction.program_id_index as usize) {
+fn has_target_transfer(transaction: &VersionedTransaction, target_pubkey: &Pubkey) -> bool {
+    for instruction in transaction.message.instructions() {
+        if let Some(program_id) = transaction.message.static_account_keys().get(instruction.program_id_index as usize) {
             if *program_id == solana_sdk::system_program::id() {
                 if let Ok(system_instruction) = bincode::deserialize::<system_instruction::SystemInstruction>(&instruction.data) {
                     if let system_instruction::SystemInstruction::Transfer { lamports } = system_instruction {
@@ -256,7 +229,7 @@ fn has_target_transfer(transaction: &Transaction, target_pubkey: &Pubkey) -> boo
                                 instruction.accounts.get(0),
                                 instruction.accounts.get(1),
                             ) {
-                                if let Some(to_pubkey) = transaction.message.account_keys.get(*to_idx as usize) {
+                                if let Some(to_pubkey) = transaction.message.static_account_keys().get(*to_idx as usize) {
                                     if to_pubkey == target_pubkey {
                                         return true;
                                     }
