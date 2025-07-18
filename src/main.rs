@@ -192,7 +192,39 @@ async fn process_transaction(
 ) -> Result<Option<String>> {
     tracing::info!("Decoding base64 transaction data, length: {}", tx_data.len());
     let tx_bytes = general_purpose::STANDARD.decode(tx_data)?;
-    let transaction: Transaction = bincode::deserialize(&tx_bytes)?;
+    tracing::info!("Decoded {} bytes from base64, first 20 bytes: {:02x?}", 
+                  tx_bytes.len(), 
+                  &tx_bytes[..tx_bytes.len().min(20)]);
+    
+    // Try deserializing transaction - Solana uses bincode format
+    let transaction: Transaction = match bincode::deserialize(&tx_bytes) {
+        Ok(tx) => {
+            tracing::info!("Successfully deserialized transaction with bincode");
+            tx
+        }
+        Err(e) => {
+            tracing::error!("Failed to deserialize transaction with bincode: {}", e);
+            tracing::info!("Trying alternative: raw bytes (hex): {}", hex::encode(&tx_bytes));
+            
+            // If bincode fails, the issue might be encoding format
+            // Let's try with different bincode config
+            use bincode::Options;
+            let config = bincode::DefaultOptions::new()
+                .with_fixint_encoding()
+                .allow_trailing_bytes();
+            
+            match config.deserialize(&tx_bytes) {
+                Ok(tx) => {
+                    tracing::info!("Successfully deserialized with alternative bincode config");
+                    tx
+                }
+                Err(e2) => {
+                    tracing::error!("Alternative bincode config also failed: {}", e2);
+                    return Err(e.into());
+                }
+            }
+        }
+    };
     
     let target_pubkey = TARGET_PUBKEY.parse::<Pubkey>()?;
     
