@@ -38,6 +38,7 @@ struct RpcResponse {
     result: Option<Value>,
     error: Option<Value>,
     id: Value,
+    jsonrpc: String,
 }
 
 type ConnectionPool = Arc<RwLock<HashMap<String, reqwest::Client>>>;
@@ -142,7 +143,7 @@ async fn handle_request(
                     let response = if let Some(signature) = signature_opt {
                         // If transaction contained target transfer and was forwarded
                         RpcResponse {
-                            jsonrpc: "2.0",
+                            jsonrpc: "2.0".to_string(),
                             result: Some(Value::String(signature)),
                             error: None,
                             id: rpc_request.id,
@@ -150,6 +151,7 @@ async fn handle_request(
                     } else {
                         // If transaction did not contain target transfer
                         RpcResponse {
+                            jsonrpc: "2.0".to_string(),
                             result: None,
                             error: Some(serde_json::json!({
                                 "code": -32603, // Standard JSON-RPC error code for internal error
@@ -170,6 +172,7 @@ async fn handle_request(
                     // Handle errors during transaction processing
                     error!("Error processing transaction: {}", e);
                     let response = RpcResponse {
+                        jsonrpc: "2.0".to_string(),
                         result: None,
                         error: Some(Value::String(format!(
                             "Error processing transaction: {}",
@@ -189,6 +192,7 @@ async fn handle_request(
             // Missing transaction data in parameters
             warn!("sendTransaction request missing transaction data parameter.");
             let response = RpcResponse {
+                jsonrpc: "2.0".to_string(),
                 result: None,
                 error: Some(Value::String(
                     "Missing transaction data parameter for sendTransaction".to_string(),
@@ -206,6 +210,7 @@ async fn handle_request(
         // Method not supported by this proxy
         warn!("Unsupported RPC method received: {}", rpc_request.method);
         let response = RpcResponse {
+            jsonrpc: "2.0".to_string(),
             result: None,
             error: Some(Value::String(format!(
                 "Method not supported by proxy: {}",
