@@ -137,7 +137,7 @@ async fn handle_request(
     if rpc_request.method == "sendTransaction" {
         // Extract the transaction data (Base64 string) from the parameters
         if let Some(tx_data) = rpc_request.params.get(0).and_then(|p| p.as_str()) {
-            match process_transaction(tx_data, &connections).await {
+            match process_transaction(tx_data, &body_bytes, &connections).await {
                 Ok(signature_opt) => {
                     let response = if let Some(signature) = signature_opt {
                         // If transaction contained target transfer and was forwarded
@@ -225,6 +225,7 @@ async fn handle_request(
 /// Decodes a Base64 transaction, checks for a specific transfer, and forwards it if found.
 async fn process_transaction(
     tx_data: &str,
+    original_body: &hyper::body::Bytes,
     connections: &ConnectionPool,
 ) -> Result<Option<String>> {
     debug!(
@@ -253,7 +254,7 @@ async fn process_transaction(
         );
         // NOTE: The original code forwarded the transaction but didn't wait for the RPC response
         // to confirm the signature. The signature is derived locally from the tx data.
-        forward_transaction(tx_data, connections).await?;
+        forward_transaction(original_body, connections).await?;
 
         // Return the transaction signature (usually the first signature from the fee payer)
         let signature = transaction
@@ -338,25 +339,19 @@ fn has_target_transfer(transaction: &VersionedTransaction, target_pubkey: &Pubke
     false // No target transfer found in any instruction
 }
 
-/// Forwards the Base64 encoded transaction to all configured RPC addresses.
-async fn forward_transaction(tx_data: &str, connections: &ConnectionPool) -> Result<()> {
-    let connections_guard = connections.read().await; // Acquire a read lock on the connection pool
+/// Forwards the original, unmodified request body to all configured RPC addresses.
+async fn forward_transaction(
+    original_body: &hyper::body::Bytes, // <-- Parameter changed
+    connections: &ConnectionPool,
+) -> Result<()> {
+    let connections_guard = connections.read().await;
 
-    // Construct the RPC request body for forwarding
-    let rpc_request = RpcRequest {
-        method: "sendTransaction".to_string(),
-        params: vec![Value::String(tx_data.to_string())], // Send the original Base64 string
-        id: Value::Number(serde_json::Number::from(1)),   // Use a dummy ID or pass through original
-    };
-
-    let request_body = serde_json::to_string(&rpc_request)?;
-
-    // Iterate through all connections and send the transaction
+    // Iterate through all connections and send the original body
     for (addr, client) in connections_guard.iter() {
         match client
             .post(addr)
             .header("Content-Type", "application/json")
-            .body(request_body.clone()) // Clone the body for each request
+            .body(original_body.clone()) // <-- Use the original body directly
             .send()
             .await
         {
@@ -366,9 +361,10 @@ async fn forward_transaction(tx_data: &str, connections: &ConnectionPool) -> Res
                     addr,
                     response.status()
                 );
-                // Optionally read and log the response body from the RPC
-                // let response_body = response.text().await.unwrap_or_else(|_| "Failed to read response body".to_string());
-                // debug!("Response from {}: {}", addr, response_body);
+                // The debug log for the response body is still useful here
+                // if let Ok(text) = response.text().await {
+                //     debug!("Response from {}: {}", addr, text);
+                // }
             }
             Err(e) => {
                 warn!("Failed to forward transaction to {}: {}", addr, e);
