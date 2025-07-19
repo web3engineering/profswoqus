@@ -142,6 +142,7 @@ async fn handle_request(
                     let response = if let Some(signature) = signature_opt {
                         // If transaction contained target transfer and was forwarded
                         RpcResponse {
+                            jsonrpc: "2.0",
                             result: Some(Value::String(signature)),
                             error: None,
                             id: rpc_request.id,
