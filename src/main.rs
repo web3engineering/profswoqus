@@ -155,7 +155,10 @@ async fn handle_request(
                             result: None,
                             error: Some(serde_json::json!({
                                 "code": -32603, // Standard JSON-RPC error code for internal error
-                                "message": "Transaction does not contain target transfer"
+                                "message": "Transaction does not contain target transfer",
+                                "data": {
+                                  "err": "Missing Transfer",
+                                }
                             })),
                             id: rpc_request.id,
                         }
